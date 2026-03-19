@@ -46,8 +46,9 @@ export interface ApikeyInfo {
 
 export interface UpdateManagerRequest {
     code: string;
-    managerCode: string;
-    managerName: string;
+    managerUserId?: number;  // 推荐：后端按 source 规则自动计算 managerCode
+    managerCode?: string;
+    managerName?: string;
 }
 
 export interface RolePath {

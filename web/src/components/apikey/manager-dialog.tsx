@@ -95,8 +95,7 @@ export const ManagerDialog: React.FC<ManagerDialogProps> = ({
         try {
             await updateManager({
                 code: akCode,
-                managerCode: user.id.toString(),
-                managerName: user.userName,
+                managerUserId: user.id,
             })
             toast({
                 title: "设置成功",

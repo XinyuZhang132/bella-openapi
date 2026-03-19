@@ -157,8 +157,10 @@ public class ApikeyConsoleController {
     @PostMapping("/manager/update")
     public Boolean updateManager(@RequestBody ApikeyOps.ManagerOp op) {
         Assert.hasText(op.getCode(), "code不可为空");
-        Assert.hasText(op.getManagerCode(), "managerCode不可为空");
-        Assert.hasText(op.getManagerName(), "managerName不可为空");
+        if(op.getManagerUserId() == null) {
+            Assert.hasText(op.getManagerCode(), "managerCode不可为空");
+            Assert.hasText(op.getManagerName(), "managerName不可为空");
+        }
         apikeyService.updateManager(op);
         return true;
     }

@@ -68,7 +68,7 @@ const RemarkCell = ({ value }: { value: string }) => {
     )
 }
 
-const ActionCell = ({code, name, displayAk, managerName, refresh, showApikey, updateApiKeyInPlace, isAdminView, isSuperAdmin}: { code: string, name: string, displayAk: string, managerName: string, refresh: () => void, showApikey: (apikey: string) => void, updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void, isAdminView?: boolean, isSuperAdmin?: boolean }) => {
+const ActionCell = ({code, name, displayAk, ownerCode, managerName, refresh, showApikey, updateApiKeyInPlace, isAdminView, isSuperAdmin}: { code: string, name: string, displayAk: string, ownerCode: string, managerName: string, refresh: () => void, showApikey: (apikey: string) => void, updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void, isAdminView?: boolean, isSuperAdmin?: boolean }) => {
     const router = useRouter()
     const { toast } = useToast();
     const [showBalance, setShowBalance] = useState(false);
@@ -192,8 +192,8 @@ const ActionCell = ({code, name, displayAk, managerName, refresh, showApikey, up
                 onClose={() => setShowTransferDialog(false)}
                 akCode={code}
                 displayName={displayAk}
+                ownerCode={ownerCode}
                 onTransferSuccess={refresh}
-                excludeSelf={!(isSuperAdmin && isAdminView)}
             />}
             <ManagerDialog
                 isOpen={showManagerDialog}
@@ -213,12 +213,13 @@ const ActionCell = ({code, name, displayAk, managerName, refresh, showApikey, up
 export interface ApikeyColumnsOptions {
     updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void;
     isAdminView?: boolean;
+    isManagedView?: boolean;
     isSuperAdmin?: boolean;
     userQuotaEditEnabled?: boolean;
 }
 
 export const ApikeyColumns = (refresh: () => void, showApikey: (apikey: string) => void, options: ApikeyColumnsOptions = {}): ColumnDef<ApikeyInfo>[] => {
-    const { updateApiKeyInPlace, isAdminView, isSuperAdmin, userQuotaEditEnabled } = options;
+    const { updateApiKeyInPlace, isAdminView, isManagedView, isSuperAdmin, userQuotaEditEnabled } = options;
     return [
     {
         accessorKey: "akDisplay",
@@ -250,7 +251,7 @@ export const ApikeyColumns = (refresh: () => void, showApikey: (apikey: string) 
             />
         ),
     },
-    ...(isAdminView ? [{
+    ...(isAdminView || isManagedView ? [{
         id: 'owner',
         header: '所有者',
         cell: ({ row }: { row: { original: ApikeyInfo } }) => (
@@ -370,6 +371,7 @@ export const ApikeyColumns = (refresh: () => void, showApikey: (apikey: string) 
                 code={row.original.code}
                 name={row.original.name}
                 displayAk={row.original.akDisplay}
+                ownerCode={row.original.ownerCode}
                 managerName={row.original.managerName || ''}
                 refresh={refresh}
                 showApikey={showApikey}
