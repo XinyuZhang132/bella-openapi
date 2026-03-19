@@ -68,7 +68,7 @@ const RemarkCell = ({ value }: { value: string }) => {
     )
 }
 
-const ActionCell = ({code, name, displayAk, managerName, refresh, showApikey, updateApiKeyInPlace}: { code: string, name: string, displayAk: string, managerName: string, refresh: () => void, showApikey: (apikey: string) => void, updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void }) => {
+const ActionCell = ({code, name, displayAk, managerName, refresh, showApikey, updateApiKeyInPlace, isAdminView, isSuperAdmin}: { code: string, name: string, displayAk: string, managerName: string, refresh: () => void, showApikey: (apikey: string) => void, updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void, isAdminView?: boolean, isSuperAdmin?: boolean }) => {
     const router = useRouter()
     const { toast } = useToast();
     const [showBalance, setShowBalance] = useState(false);
@@ -130,7 +130,7 @@ const ActionCell = ({code, name, displayAk, managerName, refresh, showApikey, up
                     </Tooltip>
                 </TooltipProvider>
             </Button>
-            <Button
+            {(!isAdminView || isSuperAdmin) && <Button
                 onClick={handleTransfer}
                 variant="ghost"
                 size="icon"
@@ -147,7 +147,7 @@ const ActionCell = ({code, name, displayAk, managerName, refresh, showApikey, up
                         <TooltipContent>转交</TooltipContent>
                     </Tooltip>
                 </TooltipProvider>
-            </Button>
+            </Button>}
             <Button
                 onClick={handleSetManager}
                 variant="ghost"
@@ -184,16 +184,17 @@ const ActionCell = ({code, name, displayAk, managerName, refresh, showApikey, up
                     </Tooltip>
                 </TooltipProvider>
             </Button>
-            <ResetDialog code={code} showApikey={showApikey}/>
-            <DeleteDialog code={code} refresh={refresh}/>
+            {!isAdminView && <ResetDialog code={code} showApikey={showApikey}/>}
+            {(!isAdminView || isSuperAdmin) && <DeleteDialog code={code} refresh={refresh}/>}
             <ApiKeyBalanceDialog code={code} isOpen={showBalance} onClose={() => setShowBalance(false)} />
-            <TransferDialog
+            {(!isAdminView || isSuperAdmin) && <TransferDialog
                 isOpen={showTransferDialog}
                 onClose={() => setShowTransferDialog(false)}
                 akCode={code}
                 displayName={displayAk}
                 onTransferSuccess={refresh}
-            />
+                excludeSelf={!(isSuperAdmin && isAdminView)}
+            />}
             <ManagerDialog
                 isOpen={showManagerDialog}
                 onClose={() => setShowManagerDialog(false)}
@@ -209,7 +210,16 @@ const ActionCell = ({code, name, displayAk, managerName, refresh, showApikey, up
     )
 }
 
-export const ApikeyColumns = (refresh: () => void, showApikey: (apikey : string) => void, updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void): ColumnDef<ApikeyInfo>[] => [
+export interface ApikeyColumnsOptions {
+    updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void;
+    isAdminView?: boolean;
+    isSuperAdmin?: boolean;
+    userQuotaEditEnabled?: boolean;
+}
+
+export const ApikeyColumns = (refresh: () => void, showApikey: (apikey: string) => void, options: ApikeyColumnsOptions = {}): ColumnDef<ApikeyInfo>[] => {
+    const { updateApiKeyInPlace, isAdminView, isSuperAdmin, userQuotaEditEnabled } = options;
+    return [
     {
         accessorKey: "akDisplay",
         header: "AK",
@@ -240,6 +250,16 @@ export const ApikeyColumns = (refresh: () => void, showApikey: (apikey : string)
             />
         ),
     },
+    ...(isAdminView ? [{
+        id: 'owner',
+        header: '所有者',
+        cell: ({ row }: { row: { original: ApikeyInfo } }) => (
+            <div className="flex items-center gap-1">
+                <Badge variant="outline">{row.original.ownerType}</Badge>
+                <span>{row.original.ownerName}</span>
+            </div>
+        )
+    }] : []),
     {
         accessorKey: "serviceId",
         header: "服务名",
@@ -303,7 +323,8 @@ export const ApikeyColumns = (refresh: () => void, showApikey: (apikey : string)
                 currency: "CNY",
             }).format(row.original.monthQuota);
 
-            return (
+            const showQuotaButton = userQuotaEditEnabled || isAdminView;
+            return showQuotaButton ? (
                 <EditableCell
                     content={formatted}
                     dialogComponent={(isOpen, onClose) => (
@@ -318,6 +339,8 @@ export const ApikeyColumns = (refresh: () => void, showApikey: (apikey : string)
                     positionCalc="50%"
                     rowId={row.id}
                 />
+            ) : (
+                <div className="text-center">{formatted}</div>
             );
         }
     },
@@ -351,7 +374,9 @@ export const ApikeyColumns = (refresh: () => void, showApikey: (apikey : string)
                 refresh={refresh}
                 showApikey={showApikey}
                 updateApiKeyInPlace={updateApiKeyInPlace}
+                isAdminView={isAdminView}
+                isSuperAdmin={isSuperAdmin}
             />
         ),
     },
-]
+]}
