@@ -1,0 +1,49 @@
+# 端点请求地址表
+#
+# 结构：
+#   endpoints:
+#     <endpoint_type>:           # 协议类型，如 chat_completions / messages
+#       bella:                   # bella-openapi 网关（统一入口）
+#         url: "..."
+#         auth_env: "BELLA_API_KEY"
+#       vendors:                 # 各官方供应商
+#         <vendor>:
+#           url: "..."           # 官方 API 地址（留空由用户补充）
+#           auth_env: "..."      # 从该环境变量读取 API Key
+#           extra_headers:       # 可选，额外请求头
+#             key: value
+#
+# 运行时：--vendor 参数选择使用哪个供应商的官方 URL 作为 baseline
+
+endpoints:
+  chat_completions:
+    bella:
+      url: "http://localhost:8080/v1/chat/completions"
+      auth_env: "BELLA_API_KEY"
+    vendors:
+      openai:
+        url: "https://api.openai.com/v1/chat/completions"
+        auth_env: "OPENAI_API_KEY"
+      glm:
+        url: ""   # TODO: 补充 GLM 官方地址
+        auth_env: "GLM_API_KEY"
+      volcengine:
+        url: ""   # TODO: 补充火山引擎官方地址
+        auth_env: "VOLCENGINE_API_KEY"
+      aliyun:
+        url: ""   # TODO: 补充阿里云官方地址
+        auth_env: "ALIYUN_API_KEY"
+      baidu:
+        url: ""   # TODO: 补充百度官方地址
+        auth_env: "BAIDU_API_KEY"
+
+  messages:
+    bella:
+      url: "http://localhost:8080/v1/messages"
+      auth_env: "BELLA_API_KEY"
+    vendors:
+      anthropic:
+        url: "https://api.anthropic.com/v1/messages"
+        auth_env: "ANTHROPIC_API_KEY"
+        extra_headers:
+          anthropic-version: "2023-06-01"

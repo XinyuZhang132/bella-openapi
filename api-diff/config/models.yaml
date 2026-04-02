@@ -1,0 +1,31 @@
+# 手动维护的模型列表
+# 格式：vendor -> endpoint_type -> [model_id, ...]
+# vendor 名称必须与 endpoints.yaml 中 vendors 下的 key 对应
+# endpoint_type 必须与 endpoints.yaml 中 endpoints 下的 key 对应
+
+models:
+  openai:
+    chat_completions:
+      - gpt-4o
+      - gpt-4o-mini
+
+  anthropic:
+    messages:
+      - claude-opus-4-6
+      - claude-haiku-4-5-20251001
+
+  glm:
+    chat_completions:
+      - glm-4       # TODO: 补充实际模型名
+
+  volcengine:
+    chat_completions:
+      - []          # TODO: 补充实际模型名
+
+  aliyun:
+    chat_completions:
+      - qwen-plus   # TODO: 补充实际模型名
+
+  baidu:
+    chat_completions:
+      - ernie-4.0   # TODO: 补充实际模型名

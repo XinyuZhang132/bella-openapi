@@ -1,0 +1,29 @@
+# image 场景：测试图片理解能力
+# 使用公开可访问的图片 URL 作为测试输入
+# model 字段由运行时注入，不需要在这里填写
+
+name: image
+description: "测试模型的图片理解能力，验证视觉相关字段结构"
+
+chat_completions:
+  messages:
+    - role: user
+      content:
+        - type: text
+          text: "这张图片里有什么？请简短描述。"
+        - type: image_url
+          image_url:
+            url: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png"
+  max_tokens: 256
+
+messages:
+  messages:
+    - role: user
+      content:
+        - type: text
+          text: "这张图片里有什么？请简短描述。"
+        - type: image
+          source:
+            type: url
+            url: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png"
+  max_tokens: 256

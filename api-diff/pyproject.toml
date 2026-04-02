@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "api-diff"
+version = "0.1.0"
+description = "直接对比官方 AI 厂商 API 与 bella-openapi 网关的响应结构差异"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27",
+    "click>=8.1",
+    "pyyaml>=6.0",
+    "deepdiff>=7.0",
+    "rich>=13.0",
+]
+
+[project.scripts]
+api-diff = "api_diff.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

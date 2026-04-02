@@ -1,0 +1,82 @@
+# 探针请求配置
+# 为每种接口类型定义最小有效请求体（minimal valid payload）
+# 用于 Layer 2（实际 API 响应）快照采集
+
+probes:
+  chat_completions:
+    description: "Chat completion probe - minimal valid request"
+    payload:
+      messages:
+        - role: "user"
+          content: "Say 'hello' in one word."
+      max_tokens: 10
+      stream: false
+
+  chat_completions_stream:
+    description: "Chat completion streaming probe"
+    payload:
+      messages:
+        - role: "user"
+          content: "Say 'hello' in one word."
+      max_tokens: 10
+      stream: true
+
+  chat_completions_tools:
+    description: "Chat completion with tool use probe"
+    payload:
+      messages:
+        - role: "user"
+          content: "What is 2+2?"
+      tools:
+        - type: "function"
+          function:
+            name: "calculator"
+            description: "Perform arithmetic"
+            parameters:
+              type: "object"
+              properties:
+                expression:
+                  type: "string"
+              required: ["expression"]
+      max_tokens: 50
+      stream: false
+
+  messages:
+    description: "Anthropic Messages API probe"
+    payload:
+      messages:
+        - role: "user"
+          content: "Say 'hello' in one word."
+      max_tokens: 10
+
+  embeddings:
+    description: "Embeddings probe"
+    payload:
+      input: "hello world"
+
+  # 以下接口通常需要真实密钥，默认标记为 skip
+  tts:
+    description: "TTS probe"
+    skip: true
+    payload:
+      input: "Hello."
+      voice: "alloy"
+
+  asr_flash:
+    description: "Flash ASR probe"
+    skip: true
+    payload: {}  # 需要音频文件，通过 fixtures 提供
+
+# 响应字段过滤（忽略每次都会变化的字段，避免误报）
+ignore_fields:
+  - "id"
+  - "created"
+  - "system_fingerprint"
+  - "x-request-id"
+  - "$.usage.prompt_tokens"     # token 数量每次不同
+  - "$.usage.completion_tokens"
+  - "$.message.id"
+  # 实际内容字段（只关注结构，不关注具体值）
+  - "$.choices[*].message.content"
+  - "$.choices[*].delta.content"
+  - "$.content[*].text"

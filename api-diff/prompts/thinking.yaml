@@ -1,0 +1,18 @@
+# thinking 场景：测试模型推理/思考能力
+# 同时维护 chat_completions 和 messages 两种 payload 格式
+# model 字段由运行时注入，不需要在这里填写
+
+name: thinking
+description: "测试模型的推理/思考能力，验证 reasoning / thinking 相关字段"
+
+chat_completions:
+  messages:
+    - role: user
+      content: "请一步步推理：123 是质数吗？"
+  max_tokens: 512
+
+messages:
+  messages:
+    - role: user
+      content: "请一步步推理：123 是质数吗？"
+  max_tokens: 512
