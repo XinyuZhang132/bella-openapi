@@ -470,7 +470,24 @@ public class TransferFromCompletionsUtils {
         return responseBuilder.build();
     }
 
-    public static List<StreamMessageResponse> convertStreamResponse(StreamCompletionResponse streamChatResponse, boolean isToolCall,
+    public static class ConversionResult {
+        public final List<StreamMessageResponse> events;
+        public final int newContentIndex;
+        /** finish_reason 已到达但 usage 为空时，此字段携带 stopReason，调用方应等待 usage chunk 再发 message_delta */
+        public final String pendingStopReason;
+
+        public ConversionResult(List<StreamMessageResponse> events, int newContentIndex, String pendingStopReason) {
+            this.events = events;
+            this.newContentIndex = newContentIndex;
+            this.pendingStopReason = pendingStopReason;
+        }
+
+        public ConversionResult(List<StreamMessageResponse> events, int newContentIndex) {
+            this(events, newContentIndex, null);
+        }
+    }
+
+    public static ConversionResult convertStreamResponse(StreamCompletionResponse streamChatResponse, boolean isToolCall,
             int contentIndex) {
         if(streamChatResponse == null)
             return null;
@@ -538,26 +555,21 @@ public class TransferFromCompletionsUtils {
             }
             // Finish reason
             if(finishReasonStr != null) {
-                StreamMessageResponse.StreamUsage streamUsage = null;
-                if(streamChatResponse.getUsage() != null) { // Full usage might
-                                                            // be on the LAST
-                                                            // chunk with
-                                                            // finish_reason
-                    streamUsage = convertToStreamUsage(streamChatResponse.getUsage());
-                } else { // More typical for intermediate deltas, no usage
-                         // reported per token
-                    streamUsage = StreamMessageResponse.StreamUsage.builder().outputTokens(0).build();
-                }
-
                 String mappedStopReason = mapFinishReason(finishReasonStr);
-
-                StreamMessageResponse.MessageDeltaInfo messageInfo = StreamMessageResponse.MessageDeltaInfo.builder()
-                        .stopReason(mappedStopReason)
-                        .build();
-
-                responseList.add(StreamMessageResponse.messageDelta(messageInfo, streamUsage));
+                if(streamChatResponse.getUsage() != null) {
+                    // finish_reason 和 usage 在同一个 chunk，直接生成完整的 message_delta
+                    StreamMessageResponse.StreamUsage streamUsage = convertToStreamUsage(streamChatResponse.getUsage());
+                    StreamMessageResponse.MessageDeltaInfo messageInfo = StreamMessageResponse.MessageDeltaInfo.builder()
+                            .stopReason(mappedStopReason)
+                            .build();
+                    responseList.add(StreamMessageResponse.messageDelta(messageInfo, streamUsage));
+                } else {
+                    // finish_reason 无 usage，延迟到 usage chunk 再发 message_delta
+                    return new ConversionResult(responseList, contentIndex, mappedStopReason);
+                }
             }
         } else if(streamChatResponse.getUsage() != null) {
+            // only-usage chunk（choices 为空），usage 在单独 chunk 中
             StreamMessageResponse.StreamUsage streamUsage = convertToStreamUsage(streamChatResponse.getUsage());
             StreamMessageResponse.MessageDeltaInfo messageInfo = StreamMessageResponse.MessageDeltaInfo.builder()
                     .stopReason(isToolCall ? "tool_use" : "end_turn")
@@ -565,7 +577,7 @@ public class TransferFromCompletionsUtils {
             responseList.add(StreamMessageResponse.messageDelta(messageInfo, streamUsage));
         }
 
-        return responseList;
+        return new ConversionResult(responseList, contentIndex);
     }
 
     private static StreamMessageResponse.StreamUsage convertToStreamUsage(CompletionResponse.TokenUsage chatUsage) {

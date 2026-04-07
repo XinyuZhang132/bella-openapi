@@ -14,6 +14,7 @@ import org.apache.commons.collections4.CollectionUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class StreamMessagesCallback extends StreamCompletionCallback {
@@ -29,6 +30,9 @@ public class StreamMessagesCallback extends StreamCompletionCallback {
     private int stage; // 0 - not started, 1 - thinking, 2 - text, 3 - tool call
 
     private int contentIndex = -1;
+
+    /** finish_reason 已到达但 usage 尚未到达时，暂存 stopReason，等 usage chunk 再发 message_delta */
+    private String pendingStopReason;
 
     public StreamMessagesCallback(SseEmitter sse,
             EndpointProcessData processData, ApikeyInfo apikeyInfo,
@@ -53,10 +57,36 @@ public class StreamMessagesCallback extends StreamCompletionCallback {
                 isToolCall = true;
             }
             if(curChoiceIndex != streamChoice.getIndex()) {
-                contentIndex += 1;
+                // tool_call start 时 convertStreamResponse 内部会递增 contentIndex，此处不需要额外递增
+                // text/thinking 时需要手动递增，为新 choice 分配起始 index
+                if(CollectionUtils.isEmpty(streamChoice.getDelta().getTool_calls())) {
+                    contentIndex += 1;
+                }
             }
         }
-        List<StreamMessageResponse> messages = TransferFromCompletionsUtils.convertStreamResponse(msg, isToolCall, contentIndex);
+        TransferFromCompletionsUtils.ConversionResult conversionResult = TransferFromCompletionsUtils.convertStreamResponse(msg, isToolCall, contentIndex);
+        if(conversionResult == null) {
+            return;
+        }
+        this.contentIndex = conversionResult.newContentIndex;
+        // finish_reason 无 usage，暂存 stopReason，等待 usage chunk
+        if(conversionResult.pendingStopReason != null && !isSendFinish) {
+            this.pendingStopReason = conversionResult.pendingStopReason;
+            // 发出 contentBlockStop，结束当前 block
+            if(!first) {
+                send(StreamMessageResponse.contentBlockStop(contentIndex));
+            }
+            isSendFinish = true;
+        }
+        List<StreamMessageResponse> messages = conversionResult.events;
+        // only-usage chunk 到来时，用暂存的 stopReason 替换猜测的 stopReason
+        if(pendingStopReason != null && CollectionUtils.isEmpty(msg.getChoices()) && msg.getUsage() != null) {
+            for (StreamMessageResponse m : messages) {
+                if("message_delta".equals(m.getType()) && m.getDelta() instanceof StreamMessageResponse.MessageDeltaInfo) {
+                    ((StreamMessageResponse.MessageDeltaInfo) m.getDelta()).setStopReason(pendingStopReason);
+                }
+            }
+        }
         if(CollectionUtils.isNotEmpty(messages)) {
             if(first) {
                 send(StreamMessageResponse.messageStart(StreamMessageResponse.initial(msg, processData.getModel())));
@@ -85,27 +115,43 @@ public class StreamMessagesCallback extends StreamCompletionCallback {
                     if(stage == 3 && currentStage == 3) {
                         if(messages.get(0).getType().equals("content_block_start")) {
                             int index = getTargetIndex(messages, stage);
-                            messages.add(index, StreamMessageResponse.contentBlockStop(contentIndex));
+                            messages.add(index, StreamMessageResponse.contentBlockStop(contentIndex - 1));
                             curChoiceIndex += 1;
                         }
                     } else if(currentStage != stage) {
                         stage = currentStage;
                         int index = getTargetIndex(messages, stage);
-                        contentIndex += 1;
                         if(currentStage != 3) {
+                            // tool call 到 text/thinking 的切换：需要自行递增 contentIndex 并生成 content_block_start
+                            contentIndex += 1;
                             MessageResponse.ContentBlock contentBlock = currentStage == 2 ? new MessageResponse.ResponseTextBlock("")
                                     : new MessageResponse.ResponseThinkingBlock("", null);;
                             messages.add(index, StreamMessageResponse.contentBlockStart(contentIndex, contentBlock));
-                            messages.forEach(streamMessageResponse -> streamMessageResponse.setIndex(contentIndex));
+                            messages.forEach(streamMessageResponse -> {
+                                if(!"message_delta".equals(streamMessageResponse.getType())) {
+                                    streamMessageResponse.setIndex(contentIndex);
+                                }
+                            });
                         }
+                        // currentStage == 3 时，convertStreamResponse 已经递增了 contentIndex 并生成 content_block_start
+                        // 只需添加前一个 block 的 stop（用当前 contentIndex - 1，因为 convertStreamResponse 已经递增了）
                         messages.add(index, StreamMessageResponse.contentBlockStop(contentIndex - 1));
                     }
                 }
             }
 
             if(messages.get(messages.size() - 1).getType().equals("message_delta") && !isSendFinish) {
+                // finish_reason 和 usage 在同一 chunk：正常流程，插入 contentBlockStop 后发 message_delta
                 isSendFinish = true;
                 messages.add(messages.size() - 1, StreamMessageResponse.contentBlockStop(contentIndex));
+            } else if(messages.get(messages.size() - 1).getType().equals("message_delta") && pendingStopReason != null) {
+                // only-usage chunk：pendingStopReason 已处理，允许此 message_delta 发出，清空 pending
+                pendingStopReason = null;
+            } else if(isSendFinish) {
+                // isSendFinish 已为 true 且没有待发的 message_delta，过滤掉重复的 message_delta
+                messages = messages.stream()
+                        .filter(m -> !"message_delta".equals(m.getType()))
+                        .collect(Collectors.toList());
             }
             messages.forEach(this::send);
         }
@@ -156,8 +202,19 @@ public class StreamMessagesCallback extends StreamCompletionCallback {
                     .outputTokens(1)
                     .inputTokens(1)
                     .build();
+            String stopReason = pendingStopReason != null ? pendingStopReason : (isToolCall ? "tool_use" : "end_turn");
             StreamMessageResponse.MessageDeltaInfo messageInfo = StreamMessageResponse.MessageDeltaInfo.builder()
-                    .stopReason(isToolCall ? "tool_use" : "end_turn")
+                    .stopReason(stopReason)
+                    .build();
+            send(StreamMessageResponse.messageDelta(messageInfo, streamUsage));
+        } else if(pendingStopReason != null) {
+            // finish_reason 已处理但 usage chunk 始终未到，兜底发一个 message_delta
+            StreamMessageResponse.StreamUsage streamUsage = StreamMessageResponse.StreamUsage.builder()
+                    .outputTokens(1)
+                    .inputTokens(1)
+                    .build();
+            StreamMessageResponse.MessageDeltaInfo messageInfo = StreamMessageResponse.MessageDeltaInfo.builder()
+                    .stopReason(pendingStopReason)
                     .build();
             send(StreamMessageResponse.messageDelta(messageInfo, streamUsage));
         }
