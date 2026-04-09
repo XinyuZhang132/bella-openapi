@@ -145,6 +145,9 @@ public class ChannelRouter {
             throw new BellaException.RateLimitException("渠道当前负载过高，请稍后重试");
         }
 
+        // AK 模型白名单过滤（仅对 entity_type=model 的渠道生效）
+        filtered = filterByAllowedModels(filtered, apikeyInfo);
+
         // 个人 apikey 两阶段路由：
         // 阶段1：优先使用私有通道 + owner_type='person' 的公共通道
         // 阶段2：无匹配时回退全部可用公共通道
@@ -273,6 +276,7 @@ public class ChannelRouter {
                         || QueueMode.of(channel.getQueueMode()).supports(queueMode))
                 .filter(channel -> isAccessible(channel, apikey))
                 .filter(channel -> isSafetyCompliant(channel, apikey))
+                .filter(channel -> isModelAllowed(channel, apikey))
                 .collect(Collectors.toList());
 
         if(CollectionUtils.isEmpty(filteredChannels)) {
@@ -303,5 +307,30 @@ public class ChannelRouter {
 
     private boolean isSafetyCompliant(ChannelDB channel, ApikeyInfo apikeyInfo) {
         return getSafetyLevelLimit(channel.getDataDestination()) <= apikeyInfo.getSafetyLevel();
+    }
+
+    private boolean isModelAllowed(ChannelDB channel, ApikeyInfo apikeyInfo) {
+        List<String> allowedModels = apikeyInfo.getAllowedModels();
+        if(CollectionUtils.isEmpty(allowedModels)) {
+            return true;
+        }
+        if(!EntityConstants.MODEL.equals(channel.getEntityType())) {
+            return true;
+        }
+        return allowedModels.contains(channel.getEntityCode());
+    }
+
+    private List<ChannelDB> filterByAllowedModels(List<ChannelDB> channels, ApikeyInfo apikeyInfo) {
+        List<String> allowedModels = apikeyInfo.getAllowedModels();
+        if(CollectionUtils.isEmpty(allowedModels)) {
+            return channels;
+        }
+        List<ChannelDB> result = channels.stream()
+                .filter(channel -> isModelAllowed(channel, apikeyInfo))
+                .collect(Collectors.toList());
+        if(CollectionUtils.isEmpty(result)) {
+            throw new BellaException.AuthorizationException("当前AK无权访问该模型");
+        }
+        return result;
     }
 }

@@ -153,7 +153,7 @@ const SubApikeyPage: React.FC = () => {
         router.push('/apikey')
     }, [router])
 
-    const columns = useMemo(() => SubApikeyColumns(setCurrentSubApikey, setShowSubApikeyDialog, handleCopyDialog, refresh, updateApiKeyInPlace), [handleCopyDialog, refresh, updateApiKeyInPlace])
+    const columns = useMemo(() => SubApikeyColumns(setCurrentSubApikey, setShowSubApikeyDialog, handleCopyDialog, refresh, updateApiKeyInPlace, parentApikey?.allowedModels), [handleCopyDialog, refresh, updateApiKeyInPlace, parentApikey?.allowedModels])
 
     return (
         <div className="min-h-screen bg-gray-50">

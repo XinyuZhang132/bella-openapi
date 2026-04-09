@@ -110,6 +110,18 @@ public class ApikeyOps {
     }
 
     @Data
+    @SuperBuilder
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static class AllowedModelsOp extends Operator {
+        private String code;
+        /**
+         * 模型白名单列表，空列表表示清除白名单（恢复不限制）
+         */
+        private List<String> modelNames;
+    }
+
+    @Data
     public static class ApikeyCondition extends PermissionCondition {
         private String ownerType;
         private String ownerCode;

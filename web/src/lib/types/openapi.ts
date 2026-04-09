@@ -42,6 +42,7 @@ export interface ApikeyInfo {
     status: string;
     remark: string;
     userId: number;
+    allowedModels?: string[];  // null/缺失 = 无白名单（不限制）；非空数组 = 白名单
 }
 
 export interface UpdateManagerRequest {
@@ -215,6 +216,7 @@ export interface CreateSubApikeyRequest {
     monthQuota: number;
     remark: string;
     roleCode: string;
+    allowedModels?: string[];  // null = 继承父 AK 白名单；非空数组 = 必须是父 AK 白名单子集
 }
 
 

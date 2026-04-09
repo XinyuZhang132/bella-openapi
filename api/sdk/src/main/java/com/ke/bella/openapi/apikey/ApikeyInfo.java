@@ -45,6 +45,7 @@ public class ApikeyInfo implements Serializable {
     private Integer qpsLimit;
     private String managerCode;
     private String managerName;
+    private List<String> allowedModels;
 
     public RolePath getRolePath() {
         if(rolePath != null) {

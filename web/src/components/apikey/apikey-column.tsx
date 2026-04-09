@@ -9,12 +9,13 @@ import {CertifyDialog, DeleteDialog, QuotaDialog, RenameDialog, ResetDialog, Ser
 import {HoverContext} from "@/components/ui/data-table";
 import {Badge} from "@/components/ui/badge"
 import {Button} from "@/components/ui/button"
-import {Copy, Wallet, Users, ArrowRightLeft, UserCog} from 'lucide-react'
+import {Copy, Wallet, Users, ArrowRightLeft, UserCog, ShieldCheck} from 'lucide-react'
 import {useToast} from "@/hooks/use-toast";
 import {safety_apply_url} from "@/config";
 import {ApiKeyBalanceDialog, ApiKeyBalanceIndicator} from "./apikey-balance";
 import {TransferDialog} from "./transfer-dialog";
 import {ManagerDialog} from "./manager-dialog";
+import {AllowedModelsDialog} from "./allowed-models-dialog";
 import {getSafetyLevel} from "@/lib/api/apikey";
 
 interface EditableCellProps {
@@ -68,12 +69,13 @@ const RemarkCell = ({ value }: { value: string }) => {
     )
 }
 
-const ActionCell = ({code, name, displayAk, ownerCode, managerName, refresh, showApikey, updateApiKeyInPlace, isAdminView, isSuperAdmin}: { code: string, name: string, displayAk: string, ownerCode: string, managerName: string, refresh: () => void, showApikey: (apikey: string) => void, updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void, isAdminView?: boolean, isSuperAdmin?: boolean }) => {
+const ActionCell = ({code, name, displayAk, ownerCode, managerName, allowedModels, refresh, showApikey, updateApiKeyInPlace, isAdminView, isSuperAdmin}: { code: string, name: string, displayAk: string, ownerCode: string, managerName: string, allowedModels?: string[], refresh: () => void, showApikey: (apikey: string) => void, updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void, isAdminView?: boolean, isSuperAdmin?: boolean }) => {
     const router = useRouter()
     const { toast } = useToast();
     const [showBalance, setShowBalance] = useState(false);
     const [showTransferDialog, setShowTransferDialog] = useState(false);
     const [showManagerDialog, setShowManagerDialog] = useState(false);
+    const [showModelsDialog, setShowModelsDialog] = useState(false);
 
 
     const copyToClipboard = () => {
@@ -167,6 +169,26 @@ const ActionCell = ({code, name, displayAk, ownerCode, managerName, refresh, sho
                 </TooltipProvider>
             </Button>
             <Button
+                onClick={() => setShowModelsDialog(true)}
+                variant="ghost"
+                size="icon"
+                className="p-0 focus:ring-0"
+            >
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <div>
+                                <ShieldCheck className={`h-4 w-4 ${allowedModels && allowedModels.length > 0 ? 'text-amber-500' : ''}`} />
+                                <span className="sr-only">模型白名单</span>
+                            </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            模型白名单{allowedModels && allowedModels.length > 0 ? `（${allowedModels.length}个模型）` : '（不限制）'}
+                        </TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+            </Button>
+            <Button
                 onClick={() => setShowBalance(true)}
                 variant="ghost"
                 size="icon"
@@ -203,6 +225,17 @@ const ActionCell = ({code, name, displayAk, ownerCode, managerName, refresh, sho
                 onSuccess={(managerCode, managerName) => {
                     if (updateApiKeyInPlace) {
                         updateApiKeyInPlace(code, { managerCode, managerName })
+                    }
+                }}
+            />
+            <AllowedModelsDialog
+                isOpen={showModelsDialog}
+                onClose={() => setShowModelsDialog(false)}
+                akCode={code}
+                akName={name}
+                onSuccess={(newModels) => {
+                    if (updateApiKeyInPlace) {
+                        updateApiKeyInPlace(code, { allowedModels: newModels.length > 0 ? newModels : undefined })
                     }
                 }}
             />
@@ -373,6 +406,7 @@ export const ApikeyColumns = (refresh: () => void, showApikey: (apikey: string) 
                 displayAk={row.original.akDisplay}
                 ownerCode={row.original.ownerCode}
                 managerName={row.original.managerName || ''}
+                allowedModels={row.original.allowedModels}
                 refresh={refresh}
                 showApikey={showApikey}
                 updateApiKeyInPlace={updateApiKeyInPlace}

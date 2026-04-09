@@ -191,6 +191,36 @@ public class ApikeyConsoleController {
         return apikeyService.getTransferHistory(akCode);
     }
 
+    @PostMapping("/models/replace")
+    public Boolean replaceAllowedModels(@RequestBody ApikeyOps.AllowedModelsOp op) {
+        Assert.hasText(op.getCode(), "code不可为空");
+        Assert.notNull(op.getModelNames(), "modelNames不可为null");
+        apikeyService.replaceAllowedModels(op);
+        return true;
+    }
+
+    @PostMapping("/models/add")
+    public Boolean addAllowedModels(@RequestBody ApikeyOps.AllowedModelsOp op) {
+        Assert.hasText(op.getCode(), "code不可为空");
+        Assert.notEmpty(op.getModelNames(), "modelNames不可为空");
+        apikeyService.addAllowedModels(op);
+        return true;
+    }
+
+    @PostMapping("/models/remove")
+    public Boolean removeAllowedModels(@RequestBody ApikeyOps.AllowedModelsOp op) {
+        Assert.hasText(op.getCode(), "code不可为空");
+        Assert.notEmpty(op.getModelNames(), "modelNames不可为空");
+        apikeyService.removeAllowedModels(op);
+        return true;
+    }
+
+    @GetMapping("/models/{akCode}")
+    public List<String> getAllowedModels(@PathVariable String akCode) {
+        Assert.hasText(akCode, "akCode不可为空");
+        return apikeyService.queryAllowedModels(akCode);
+    }
+
     @GetMapping("/qps/topN")
     public List<QpsRankEntry> getQpsTopN(@RequestParam(value = "topN", defaultValue = "10") int topN) {
         Assert.isTrue(topN > 0 && topN <= 100, "topN 必须在 1-100 之间");

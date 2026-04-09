@@ -191,3 +191,27 @@ export async function getTransferHistory(akCode: string): Promise<ApikeyTransfer
         throw error;
     }
 }
+
+// 查询 AK 的模型白名单（返回空数组表示无白名单，即不限制）
+export async function getAllowedModels(akCode: string): Promise<string[]> {
+    const response = await openapi.get<string[]>(`/console/apikey/models/${akCode}`);
+    return response.data ?? [];
+}
+
+// 追加模型到白名单（低风险，日常使用）
+export async function addAllowedModels(code: string, modelNames: string[]): Promise<boolean> {
+    const response = await openapi.post<boolean>('/console/apikey/models/add', { code, modelNames });
+    return response.data ?? false;
+}
+
+// 从白名单精确移除指定模型（低风险，日常使用）
+export async function removeAllowedModels(code: string, modelNames: string[]): Promise<boolean> {
+    const response = await openapi.post<boolean>('/console/apikey/models/remove', { code, modelNames });
+    return response.data ?? false;
+}
+
+// 整体替换白名单（高危：传 [] 可清空白名单恢复不限制；传非空列表则全量覆盖）
+export async function replaceAllowedModels(code: string, modelNames: string[]): Promise<boolean> {
+    const response = await openapi.post<boolean>('/console/apikey/models/replace', { code, modelNames });
+    return response.data ?? false;
+}

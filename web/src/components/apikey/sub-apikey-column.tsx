@@ -1,16 +1,17 @@
 'use client'
 
-import React from "react"
+import React, {useState} from "react"
 import {ColumnDef} from "@tanstack/react-table"
 import {ApikeyInfo} from "@/lib/types/openapi"
 import {Tooltip, TooltipContent, TooltipProvider, TooltipTrigger} from "@/components/ui/tooltip"
 import {Badge} from "@/components/ui/badge"
 import {Button} from "@/components/ui/button"
-import {Copy, Edit, Wallet} from 'lucide-react'
+import {Copy, Edit, Wallet, ShieldCheck} from 'lucide-react'
 import {useToast} from "@/hooks/use-toast"
 import {ApiKeyBalanceIndicator} from "@/components/apikey/apikey-balance";
 import {getSafetyLevel} from "@/lib/api/apikey";
 import {DeleteDialog, ResetDialog} from "@/components/apikey/apikey-dialog";
+import {AllowedModelsDialog} from "@/components/apikey/allowed-models-dialog";
 
 const RemarkCell = ({ value }: { value: string }) => {
     const remark = value || '/'
@@ -28,13 +29,17 @@ const RemarkCell = ({ value }: { value: string }) => {
     )
 }
 
-const ActionCell = ({apikey, setCurrentSubApikey, setShowUpdateDialog, handleCopyDialog, refresh}: {
+const ActionCell = ({apikey, parentAllowedModels, setCurrentSubApikey, setShowUpdateDialog, handleCopyDialog, refresh, updateApiKeyInPlace}: {
     apikey: ApikeyInfo,
+    parentAllowedModels?: string[],
     setCurrentSubApikey:(apikey:ApikeyInfo|null) => void,
     setShowUpdateDialog:(open:boolean) => void,
     handleCopyDialog: (apikey:string) => void,
-    refresh: () => void}) => {
+    refresh: () => void,
+    updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void,
+}) => {
     const { toast } = useToast();
+    const [showModelsDialog, setShowModelsDialog] = useState(false);
 
     const copyToClipboard = () => {
         navigator.clipboard.writeText(apikey.code).then(() => {
@@ -49,14 +54,13 @@ const ActionCell = ({apikey, setCurrentSubApikey, setShowUpdateDialog, handleCop
 
     return (
         <div className="flex justify-end">
-
             <Button onClick={showUpdateSubApikeyDialog} variant="ghost" size="icon" className="p-0 focus:ring-0">
                 <TooltipProvider>
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <div>
                                 <Edit className="h-4 w-4" />
-                                <span className="sr-only">修改ak code</span>
+                                <span className="sr-only">修改子ak</span>
                             </div>
                         </TooltipTrigger>
                         <TooltipContent>
@@ -80,8 +84,40 @@ const ActionCell = ({apikey, setCurrentSubApikey, setShowUpdateDialog, handleCop
                     </Tooltip>
                 </TooltipProvider>
             </Button>
+            <Button
+                onClick={() => setShowModelsDialog(true)}
+                variant="ghost"
+                size="icon"
+                className="p-0 focus:ring-0"
+            >
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <div>
+                                <ShieldCheck className={`h-4 w-4 ${apikey.allowedModels && apikey.allowedModels.length > 0 ? 'text-amber-500' : ''}`} />
+                                <span className="sr-only">模型白名单</span>
+                            </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            模型白名单{apikey.allowedModels && apikey.allowedModels.length > 0 ? `（${apikey.allowedModels.length}个模型）` : '（不限制）'}
+                        </TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+            </Button>
             <ResetDialog code={apikey.code} showApikey={handleCopyDialog}/>
             <DeleteDialog code={apikey.code} refresh={refresh}/>
+            <AllowedModelsDialog
+                isOpen={showModelsDialog}
+                onClose={() => setShowModelsDialog(false)}
+                akCode={apikey.code}
+                akName={apikey.name}
+                parentAllowedModels={parentAllowedModels}
+                onSuccess={(newModels) => {
+                    if (updateApiKeyInPlace) {
+                        updateApiKeyInPlace(apikey.code, { allowedModels: newModels.length > 0 ? newModels : undefined })
+                    }
+                }}
+            />
         </div>
     )
 }
@@ -91,7 +127,8 @@ export const SubApikeyColumns = (
     setShowUpdateDialog:(open:boolean)=> void,
     handleCopyDialog: (apikey:string) => void,
     refresh: () => void,
-    updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void): ColumnDef<ApikeyInfo>[] => [
+    updateApiKeyInPlace?: (code: string, updates: Partial<ApikeyInfo>) => void,
+    parentAllowedModels?: string[]): ColumnDef<ApikeyInfo>[] => [
     {
         accessorKey: "akDisplay",
         header: "子AK",
@@ -155,10 +192,12 @@ export const SubApikeyColumns = (
         header: "",
         cell: ({row}) => (
             <ActionCell apikey={row.original}
+                        parentAllowedModels={parentAllowedModels}
                         setCurrentSubApikey={setCurrentSubApikey}
                         setShowUpdateDialog={setShowUpdateDialog}
                         handleCopyDialog={handleCopyDialog}
-                        refresh={refresh}/>
+                        refresh={refresh}
+                        updateApiKeyInPlace={updateApiKeyInPlace}/>
         ),
     },
 ]

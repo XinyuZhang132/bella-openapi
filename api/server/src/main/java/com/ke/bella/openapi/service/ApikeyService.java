@@ -22,6 +22,7 @@ import com.ke.bella.openapi.common.EntityConstants;
 import com.ke.bella.openapi.event.ApiKeyTransferEvent;
 import com.ke.bella.openapi.common.exception.BellaException;
 import com.ke.bella.openapi.db.repo.ApikeyCostRepo;
+import com.ke.bella.openapi.db.repo.ApikeyModelRelRepo;
 import com.ke.bella.openapi.db.repo.ApikeyRepo;
 import com.ke.bella.openapi.db.repo.ApikeyRoleRepo;
 import com.ke.bella.openapi.db.repo.ApikeyTransferLogRepo;
@@ -53,6 +54,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import static com.ke.bella.openapi.common.EntityConstants.ACTIVE;
 import static com.ke.bella.openapi.common.EntityConstants.CONSOLE;
@@ -70,6 +72,9 @@ public class ApikeyService {
 
     @Autowired
     private ApikeyRoleRepo apikeyRoleRepo;
+
+    @Autowired
+    private ApikeyModelRelRepo apikeyModelRelRepo;
 
     @Autowired
     private ApikeyCostRepo apikeyCostRepo;
@@ -204,6 +209,23 @@ public class ApikeyService {
                             && apikey.getRolePath().getExcluded().stream().noneMatch(pattern -> MatchUtils.matchUrl(pattern, url)));
             Assert.isTrue(match, "超出ak的权限范围");
             updateRole(ApikeyOps.RoleOp.builder().code(db.getCode()).paths(op.getPaths()).build());
+        }
+        // 处理子 AK 模型白名单：null=继承父 AK，非 null=校验子集后写入
+        List<String> parentModels = apikeyModelRelRepo.listModelsByAkCode(op.getParentCode());
+        List<String> childModels;
+        if(op.getAllowedModels() == null) {
+            childModels = parentModels;
+        } else {
+            if(!parentModels.isEmpty()) {
+                List<String> exceeded = op.getAllowedModels().stream()
+                        .filter(m -> !parentModels.contains(m))
+                        .collect(Collectors.toList());
+                Assert.isTrue(exceeded.isEmpty(), "模型超出父AK允许范围：" + String.join(", ", exceeded));
+            }
+            childModels = op.getAllowedModels();
+        }
+        if(!childModels.isEmpty()) {
+            apikeyModelRelRepo.replaceModels(db.getCode(), childModels, BellaContext.getOperator());
         }
         return ak;
     }
@@ -598,6 +620,10 @@ public class ApikeyService {
         if(apikeyInfo == null || (apikeyInfo.getStatus().equals(INACTIVE))) {
             return null;
         }
+        List<String> allowedModels = apikeyModelRelRepo.listModelsByAkCode(apikeyInfo.getCode());
+        if(!allowedModels.isEmpty()) {
+            apikeyInfo.setAllowedModels(allowedModels);
+        }
         return apikeyInfo;
     }
 
@@ -719,6 +745,148 @@ public class ApikeyService {
         }
 
         return apikeyTransferLogRepo.queryByAkCode(akCode);
+    }
+
+    @Transactional
+    public void replaceAllowedModels(ApikeyOps.AllowedModelsOp op) {
+        apikeyRepo.checkExist(op.getCode(), true);
+        ApikeyDB db = apikeyRepo.queryByUniqueKey(op.getCode());
+
+        if(!isAdminOperator()) {
+            checkPermission(op.getCode());
+        }
+
+        // 双向严格：子 AK 设置/清空白名单时，不能超出父 AK 的白名单范围
+        // 若父 AK 有白名单，子 AK 不可清空（清空 = 不限制，相当于超出父 AK 范围）
+        if(StringUtils.isNotEmpty(db.getParentCode())) {
+            List<String> parentModels = apikeyModelRelRepo.listModelsByAkCode(db.getParentCode());
+            if(!parentModels.isEmpty()) {
+                Assert.isTrue(!CollectionUtils.isEmpty(op.getModelNames()),
+                        "父AK已设置模型白名单，子AK不可清空白名单（清空后将超出父AK允许范围）");
+                List<String> exceeded = op.getModelNames().stream()
+                        .filter(m -> !parentModels.contains(m))
+                        .collect(Collectors.toList());
+                Assert.isTrue(exceeded.isEmpty(), "模型超出父AK允许范围：" + String.join(", ", exceeded));
+            }
+        }
+
+        // 严格策略：父 AK 收紧时，检查子 AK 是否越界
+        // TODO [待决策] 存量子 AK 无白名单（不限制）时的处理策略：
+        //   当前行为：childModels 为空的子 AK 直接跳过，导致父 AK 设置白名单后子 AK 仍不限制，双向严格约束被破坏。
+        //   方案 A（严格/拒绝）：若存在任何无白名单的子 AK，直接报错拒绝，要求操作者先处理所有子 AK。
+        //     - 优点：语义最严格，操作者明确感知影响范围。
+        //     - 缺点：父 AK 有大量子 AK 时，操作成本极高。
+        //   方案 B（宽松/级联）：自动将无白名单的子 AK 的白名单设置为与父 AK 新白名单相同。
+        //     - 优点：操作简便，父 AK 设置后立即全链路生效。
+        //     - 缺点：静默修改子 AK，操作者无感知，子 AK 所有者可能不知情。
+        //   add 接口同样存在此问题（见 addAllowedModels 方法内的同名 TODO）。
+        if(!CollectionUtils.isEmpty(op.getModelNames())) {
+            ApikeyOps.ApikeyCondition childCondition = new ApikeyOps.ApikeyCondition();
+            childCondition.setParentCode(op.getCode());
+            List<ApikeyDB> children = apikeyRepo.listAccessKeys(childCondition);
+            for(ApikeyDB child : children) {
+                List<String> childModels = apikeyModelRelRepo.listModelsByAkCode(child.getCode());
+                if(!childModels.isEmpty()) {
+                    List<String> exceeded = childModels.stream()
+                            .filter(m -> !op.getModelNames().contains(m))
+                            .collect(Collectors.toList());
+                    Assert.isTrue(exceeded.isEmpty(),
+                            "子AK [" + child.getCode() + "] 包含不在新白名单范围内的模型：" +
+                            String.join(", ", exceeded) + "，请先处理子AK");
+                }
+                // TODO [待决策] childModels 为空（子 AK 无白名单）时，此处未作处理，双向严格约束未覆盖该情形。
+            }
+        }
+
+        apikeyModelRelRepo.replaceModels(op.getCode(), op.getModelNames(), BellaContext.getOperator());
+
+        // 清除缓存
+        ApikeyService self = applicationContext.getBean(ApikeyService.class);
+        self.clearApikeyCache(db.getAkSha());
+    }
+
+    @Transactional
+    public void addAllowedModels(ApikeyOps.AllowedModelsOp op) {
+        apikeyRepo.checkExist(op.getCode(), true);
+        ApikeyDB db = apikeyRepo.queryByUniqueKey(op.getCode());
+
+        if(!isAdminOperator()) {
+            checkPermission(op.getCode());
+        }
+
+        // 子 AK 追加时，同样不能超出父 AK 白名单范围
+        if(StringUtils.isNotEmpty(db.getParentCode())) {
+            List<String> parentModels = apikeyModelRelRepo.listModelsByAkCode(db.getParentCode());
+            if(!parentModels.isEmpty()) {
+                List<String> exceeded = op.getModelNames().stream()
+                        .filter(m -> !parentModels.contains(m))
+                        .collect(Collectors.toList());
+                Assert.isTrue(exceeded.isEmpty(), "模型超出父AK允许范围：" + String.join(", ", exceeded));
+            }
+        }
+
+        // TODO [待决策] 父 AK 通过 add 接口新增白名单时，无白名单的子 AK 仍不受限，双向严格约束未覆盖该情形。
+        //   处理方案与 replaceAllowedModels 中的同名 TODO 一致，请同步决策。
+
+        // 计算真正需要新增的模型（去掉已存在的，避免 UNIQUE KEY 冲突）
+        List<String> current = apikeyModelRelRepo.listModelsByAkCode(op.getCode());
+        List<String> toAdd = op.getModelNames().stream()
+                .filter(m -> !current.contains(m))
+                .collect(Collectors.toList());
+        if(!toAdd.isEmpty()) {
+            apikeyModelRelRepo.addModels(op.getCode(), toAdd, BellaContext.getOperator());
+        }
+
+        ApikeyService self = applicationContext.getBean(ApikeyService.class);
+        self.clearApikeyCache(db.getAkSha());
+    }
+
+    @Transactional
+    public void removeAllowedModels(ApikeyOps.AllowedModelsOp op) {
+        apikeyRepo.checkExist(op.getCode(), true);
+        ApikeyDB db = apikeyRepo.queryByUniqueKey(op.getCode());
+
+        if(!isAdminOperator()) {
+            checkPermission(op.getCode());
+        }
+
+        // 子 AK remove 时，若移除后白名单变为空，且父 AK 有白名单，则拒绝（清空后将超出父 AK 范围）
+        if(StringUtils.isNotEmpty(db.getParentCode())) {
+            List<String> parentModels = apikeyModelRelRepo.listModelsByAkCode(db.getParentCode());
+            if(!parentModels.isEmpty()) {
+                List<String> current = apikeyModelRelRepo.listModelsByAkCode(op.getCode());
+                List<String> remaining = current.stream()
+                        .filter(m -> !op.getModelNames().contains(m))
+                        .collect(Collectors.toList());
+                Assert.isTrue(!remaining.isEmpty(),
+                        "移除后子AK白名单将变为空（相当于不限制），但父AK已设置白名单，请保留至少一个模型或先修改父AK");
+            }
+        }
+
+        // 父 AK 移除模型时，检查子 AK 是否有越界（子 AK 白名单包含即将被移除的模型）
+        ApikeyOps.ApikeyCondition childCondition = new ApikeyOps.ApikeyCondition();
+        childCondition.setParentCode(op.getCode());
+        List<ApikeyDB> children = apikeyRepo.listAccessKeys(childCondition);
+        for(ApikeyDB child : children) {
+            List<String> childModels = apikeyModelRelRepo.listModelsByAkCode(child.getCode());
+            if(!childModels.isEmpty()) {
+                List<String> exceeded = childModels.stream()
+                        .filter(m -> op.getModelNames().contains(m))
+                        .collect(Collectors.toList());
+                Assert.isTrue(exceeded.isEmpty(),
+                        "子AK [" + child.getCode() + "] 包含即将被移除的模型：" +
+                        String.join(", ", exceeded) + "，请先处理子AK");
+            }
+        }
+
+        apikeyModelRelRepo.removeModels(op.getCode(), op.getModelNames());
+
+        ApikeyService self = applicationContext.getBean(ApikeyService.class);
+        self.clearApikeyCache(db.getAkSha());
+    }
+
+    public List<String> queryAllowedModels(String akCode) {
+        return apikeyModelRelRepo.listModelsByAkCode(akCode);
     }
 
     /**
